@@ -17,14 +17,114 @@
         <SolidColorBrush x:Key="TextBrush"    Color="#E0E0E0"/>
         <SolidColorBrush x:Key="SubBrush"     Color="#888888"/>
 
+        <!-- ── Menu: expander toggle (▶ / ▼) ── -->
+        <Style x:Key="MenuItemExpanderStyle" TargetType="ToggleButton">
+            <Setter Property="Focusable"  Value="False"/>
+            <Setter Property="Width"      Value="16"/>
+            <Setter Property="Height"     Value="16"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <ContentPresenter/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── MenuItem with guaranteed dark popup ── -->
+        <Style TargetType="MenuItem">
+            <Setter Property="Foreground"  Value="#E0E0E0"/>
+            <Setter Property="Background"  Value="Transparent"/>
+            <Setter Property="FontSize"    Value="13"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Grid>
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    Padding="10,5">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter Grid.Column="0"
+                                                      ContentSource="Header"
+                                                      RecognizesAccessKey="True"
+                                                      VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="GestureText"
+                                               Grid.Column="1"
+                                               Text="{TemplateBinding InputGestureText}"
+                                               Foreground="#888888"
+                                               VerticalAlignment="Center"
+                                               Margin="24,0,0,0"
+                                               Visibility="Collapsed"/>
+                                </Grid>
+                            </Border>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   IsOpen="{Binding IsSubmenuOpen,
+                                            RelativeSource={RelativeSource TemplatedParent}}"
+                                   Placement="Bottom"
+                                   HorizontalOffset="-1"
+                                   PopupAnimation="Fade">
+                                <Border Background="#1E2A40"
+                                        BorderBrush="#0F3460"
+                                        BorderThickness="1"
+                                        Padding="0,3">
+                                    <ItemsPresenter/>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Role" Value="SubmenuItem">
+                                <Setter TargetName="Bd"          Property="Padding"    Value="8,6"/>
+                                <Setter TargetName="GestureText" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="Role" Value="SubmenuHeader">
+                                <Setter TargetName="Bd"         Property="Padding"    Value="8,6"/>
+                                <Setter TargetName="PART_Popup" Property="Placement"  Value="Right"/>
+                            </Trigger>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0F3460"/>
+                            </Trigger>
+                            <Trigger Property="IsSubmenuOpen" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0F3460"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#555555"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── Separator ── -->
+        <Style TargetType="Separator">
+            <Setter Property="Background" Value="#0F3460"/>
+            <Setter Property="Height"     Value="1"/>
+            <Setter Property="Margin"     Value="4,3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Border Background="{TemplateBinding Background}"
+                                Height="{TemplateBinding Height}"
+                                Margin="{TemplateBinding Margin}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ── Regular button ── -->
         <Style x:Key="DarkBtn" TargetType="Button">
-            <Setter Property="Background"      Value="#16213E"/>
-            <Setter Property="Foreground"      Value="#E0E0E0"/>
-            <Setter Property="BorderBrush"     Value="#0F3460"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding"         Value="12,5"/>
-            <Setter Property="Cursor"          Value="Hand"/>
+            <Setter Property="Background"       Value="#16213E"/>
+            <Setter Property="Foreground"       Value="#E0E0E0"/>
+            <Setter Property="BorderBrush"      Value="#0F3460"/>
+            <Setter Property="BorderThickness"  Value="1"/>
+            <Setter Property="Padding"          Value="12,5"/>
+            <Setter Property="Cursor"           Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -57,13 +157,13 @@
 
         <!-- ── Angle toggle button ── -->
         <Style x:Key="AngleBtn" TargetType="ToggleButton">
-            <Setter Property="Background"      Value="#16213E"/>
-            <Setter Property="Foreground"      Value="#E0E0E0"/>
-            <Setter Property="BorderBrush"     Value="#0F3460"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding"         Value="0,8"/>
-            <Setter Property="FontSize"        Value="13"/>
-            <Setter Property="Cursor"          Value="Hand"/>
+            <Setter Property="Background"       Value="#16213E"/>
+            <Setter Property="Foreground"       Value="#E0E0E0"/>
+            <Setter Property="BorderBrush"      Value="#0F3460"/>
+            <Setter Property="BorderThickness"  Value="1"/>
+            <Setter Property="Padding"          Value="0,8"/>
+            <Setter Property="FontSize"         Value="13"/>
+            <Setter Property="Cursor"           Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -92,26 +192,152 @@
             </Setter>
         </Style>
 
-        <!-- ── ListBox ── -->
-        <Style x:Key="DarkList" TargetType="ListBox">
-            <Setter Property="Background"      Value="#16213E"/>
-            <Setter Property="BorderBrush"     Value="#0F3460"/>
-            <Setter Property="Foreground"      Value="#E0E0E0"/>
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <!-- ── TabControl ── -->
+        <Style TargetType="TabControl">
+            <Setter Property="Background"  Value="#16213E"/>
+            <Setter Property="BorderBrush" Value="#0F3460"/>
+            <Setter Property="Padding"     Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <DockPanel>
+                            <TabPanel DockPanel.Dock="Top"
+                                      IsItemsHost="True"
+                                      Background="Transparent"/>
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="0,4,0,0">
+                                <ContentPresenter ContentSource="SelectedContent"/>
+                            </Border>
+                        </DockPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
-        <Style x:Key="DarkListItem" TargetType="ListBoxItem">
-            <Setter Property="Padding"    Value="8,5"/>
-            <Setter Property="Background" Value="Transparent"/>
+
+        <!-- ── TabItem ── -->
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground"       Value="#888888"/>
+            <Setter Property="Background"       Value="Transparent"/>
+            <Setter Property="Padding"          Value="10,5"/>
+            <Setter Property="FontSize"         Value="12"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                CornerRadius="3" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter/>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="0,0,0,2"
+                                BorderBrush="Transparent"
+                                Padding="{TemplateBinding Padding}"
+                                Margin="0,0,2,0">
+                            <ContentPresenter ContentSource="Header"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Center"
+                                              TextBlock.Foreground="{TemplateBinding Foreground}"/>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#E94560"/>
+                                <Setter Property="Foreground" Value="#E0E0E0"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#E0E0E0"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#0F3460"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── TreeView expander button ── -->
+        <Style x:Key="TreeExpanderBtn" TargetType="ToggleButton">
+            <Setter Property="Focusable"        Value="False"/>
+            <Setter Property="Width"            Value="16"/>
+            <Setter Property="Height"           Value="16"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent" Width="16" Height="16">
+                            <Path x:Name="Arrow"
+                                  Data="M2,4 L8,4 L5,8 Z"
+                                  Fill="#555555"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="False">
+                                <Setter TargetName="Arrow" Property="Data" Value="M4,2 L8,5 L4,8 Z"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Arrow" Property="Fill" Value="#E0E0E0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── TreeView ── -->
+        <Style TargetType="TreeView">
+            <Setter Property="Background"           Value="#16213E"/>
+            <Setter Property="BorderThickness"      Value="0"/>
+            <Setter Property="Foreground"           Value="#E0E0E0"/>
+            <Setter Property="FocusVisualStyle"     Value="{x:Null}"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+
+        <!-- ── TreeViewItem (trips + date headers) ── -->
+        <Style TargetType="TreeViewItem">
+            <Setter Property="Foreground"       Value="#E0E0E0"/>
+            <Setter Property="Background"       Value="Transparent"/>
+            <Setter Property="IsExpanded"       Value="True"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TreeViewItem">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <!-- Header row -->
+                            <Border x:Name="Bd" Grid.Row="0"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="3" Padding="2,3">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="Expander"
+                                                  Grid.Column="0"
+                                                  Style="{StaticResource TreeExpanderBtn}"
+                                                  IsChecked="{Binding IsExpanded,
+                                                      RelativeSource={RelativeSource TemplatedParent}}"
+                                                  ClickMode="Press"/>
+                                    <ContentPresenter x:Name="PART_Header"
+                                                      Grid.Column="1"
+                                                      ContentSource="Header"
+                                                      VerticalAlignment="Center"
+                                                      Margin="2,0,0,0"/>
+                                </Grid>
+                            </Border>
+                            <!-- Children -->
+                            <ItemsPresenter x:Name="ItemsHost"
+                                            Grid.Row="1"
+                                            Margin="16,0,0,0"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="False">
+                                <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                            </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#E94560"/>
                             </Trigger>
@@ -123,6 +349,35 @@
                                 <Setter TargetName="Bd" Property="Background" Value="#0F3460"/>
                             </MultiTrigger>
                         </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Date-group nodes: dim, non-selectable, top margin -->
+        <Style x:Key="DateNodeStyle" TargetType="TreeViewItem"
+               BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="Foreground" Value="#888888"/>
+            <Setter Property="Focusable"  Value="False"/>
+            <Setter Property="Margin"     Value="0,6,0,0"/>
+            <Setter Property="FontSize"   Value="11"/>
+        </Style>
+
+        <!-- ── ProgressBar (thin accent bar) ── -->
+        <Style TargetType="ProgressBar">
+            <Setter Property="Background"  Value="#0F3460"/>
+            <Setter Property="Foreground"  Value="#E94560"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Height"      Value="4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                            <Border x:Name="PART_Indicator"
+                                    HorizontalAlignment="Left"
+                                    Background="{TemplateBinding Foreground}"
+                                    CornerRadius="2"/>
+                        </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -173,19 +428,22 @@
 
     </Window.Resources>
 
-    <!-- ── Menu bar ── -->
     <Window.InputBindings>
         <KeyBinding Modifiers="Ctrl" Key="O" Command="{x:Static ApplicationCommands.Open}"/>
     </Window.InputBindings>
 
     <DockPanel>
 
+        <!-- ── Menu bar ── -->
         <Menu DockPanel.Dock="Top" Background="#16213E" Foreground="#E0E0E0">
-            <MenuItem Header="_File" Foreground="#E0E0E0">
-                <MenuItem Header="Open Thumb Drive…" Click="OpenDrive_Click"
+            <MenuItem Header="_File">
+                <MenuItem Header="Set Archive Folder…" Click="SetArchiveFolder_Click"/>
+                <Separator/>
+                <MenuItem Header="Open Thumb Drive…"   Click="OpenDrive_Click"
                           InputGestureText="Ctrl+O"/>
-                <Separator Background="#0F3460"/>
-                <MenuItem Header="Quit" Click="Quit_Click" InputGestureText="Ctrl+Q"/>
+                <Separator/>
+                <MenuItem Header="Quit"                Click="Quit_Click"
+                          InputGestureText="Ctrl+Q"/>
             </MenuItem>
         </Menu>
 
@@ -198,30 +456,46 @@
             <!-- ═══════════════ LEFT SIDEBAR ═══════════════ -->
             <DockPanel Grid.Column="0" Margin="8,8,4,8">
 
-                <TextBlock DockPanel.Dock="Top"
-                           Text="Trips" FontSize="14" FontWeight="Bold"
-                           Foreground="#E0E0E0" Margin="0,0,0,6"/>
-
                 <TextBlock x:Name="CountLabel" DockPanel.Dock="Bottom"
                            Foreground="#888888" FontSize="11"
                            TextAlignment="Center" Margin="0,4,0,0"/>
 
-                <ListBox x:Name="SessionList"
-                         Style="{StaticResource DarkList}"
-                         ItemContainerStyle="{StaticResource DarkListItem}"
-                         SelectionChanged="SessionList_SelectionChanged">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap"
-                                       FontSize="12" Foreground="#E0E0E0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <TabControl x:Name="SourceTabs"
+                            SelectionChanged="SourceTabs_SelectionChanged">
+
+                    <!-- Thumb Drive tab -->
+                    <TabItem Header="Thumb Drive">
+                        <DockPanel>
+                            <Button x:Name="BtnArchive" DockPanel.Dock="Bottom"
+                                    Content="⬇  Archive Trip"
+                                    Style="{StaticResource DarkBtn}"
+                                    IsEnabled="False"
+                                    Click="Archive_Click"
+                                    Margin="0,4,0,0"
+                                    ToolTip="Copy selected trip to the archive folder"/>
+                            <TreeView x:Name="DriveTree"
+                                      SelectedItemChanged="DriveTree_SelectedItemChanged"/>
+                        </DockPanel>
+                    </TabItem>
+
+                    <!-- Archive tab -->
+                    <TabItem Header="Archive">
+                        <TreeView x:Name="ArchiveTree"
+                                  SelectedItemChanged="ArchiveTree_SelectedItemChanged"/>
+                    </TabItem>
+
+                </TabControl>
 
             </DockPanel>
 
             <!-- ═══════════════ MAIN AREA ═══════════════ -->
             <DockPanel Grid.Column="1" Margin="4,8,8,8" LastChildFill="True">
+
+                <!-- Progress bar (visible only during archive) -->
+                <ProgressBar x:Name="ArchiveProgress"
+                             DockPanel.Dock="Bottom"
+                             Visibility="Collapsed"
+                             Margin="0,2,0,0"/>
 
                 <!-- Status bar -->
                 <TextBlock x:Name="StatusLabel" DockPanel.Dock="Bottom"
@@ -233,7 +507,6 @@
                         BorderBrush="#0F3460" BorderThickness="1" CornerRadius="6"
                         Margin="0,6,0,0" Padding="8,6" Background="#16213E">
                     <DockPanel>
-                        <!-- Speed buttons (right side) -->
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                     VerticalAlignment="Center" Margin="10,0,0,0">
                             <TextBlock Text="Speed:" Foreground="#888888"
@@ -245,12 +518,11 @@
                             <Button Content="2×"  Style="{StaticResource DarkBtn}"
                                     Click="DoubleSpeed_Click" MinWidth="44" Margin="2,0"/>
                         </StackPanel>
-                        <!-- Transport buttons (center) -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <Button Content="⏮" Style="{StaticResource DarkBtn}"
                                     Click="Beginning_Click" FontSize="18"
                                     Width="50" Height="44" Margin="2,0"
-                                    ToolTip="Go to beginning"/>
+                                    ToolTip="Go to trip start"/>
                             <Button Content="⏪" Style="{StaticResource DarkBtn}"
                                     Click="StepBack_Click" FontSize="18"
                                     Width="50" Height="44" Margin="2,0"
@@ -266,7 +538,7 @@
                             <Button Content="⏭" Style="{StaticResource DarkBtn}"
                                     Click="End_Click" FontSize="18"
                                     Width="50" Height="44" Margin="2,0"
-                                    ToolTip="Go to end of clip"/>
+                                    ToolTip="Go to end of current clip"/>
                         </StackPanel>
                     </DockPanel>
                 </Border>
@@ -274,9 +546,9 @@
                 <!-- Seek bar -->
                 <Grid DockPanel.Dock="Bottom" Margin="0,4,0,4">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="44"/>
+                        <ColumnDefinition Width="50"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="44"/>
+                        <ColumnDefinition Width="50"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="TimeLabel" Grid.Column="0"
                                Text="0:00" Foreground="#E0E0E0"
@@ -323,10 +595,7 @@
                     </UniformGrid>
                 </Border>
 
-                <!-- ── Video container: 4 stacked MediaElements ──
-                     All four play simultaneously.  Visibility.Hidden keeps
-                     the element in the render tree (still decoding) but
-                     invisible.  Switching angles just flips Visibility.      -->
+                <!-- 4 stacked MediaElements -->
                 <Grid x:Name="VideoGrid" Background="Black">
                     <MediaElement x:Name="VideoFront"
                                   LoadedBehavior="Manual" UnloadedBehavior="Stop"

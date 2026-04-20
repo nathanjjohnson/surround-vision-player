@@ -11,35 +11,42 @@ namespace SurroundVisionPlayer;
 
 public partial class MainWindow : Window
 {
-    // ── Data ─────────────────────────────────────────────────────────────────
+    // ── Source data ───────────────────────────────────────────────────────────
 
+    private SortedDictionary<string, Dictionary<string, string>> _driveRecordings   = [];
+    private List<List<string>>                                    _driveSessions     = [];
+    private SortedDictionary<string, Dictionary<string, string>> _archiveRecordings = [];
+    private List<List<string>>                                    _archiveSessions   = [];
+
+    // Points to whichever source is currently being played
     private SortedDictionary<string, Dictionary<string, string>> _recordings = [];
-    private List<List<string>>  _sessions       = [];
-    private List<string>        _allTimestamps  = [];
-    private string?             _currentTs;
-    private int                 _currentSession = -1;
-
-    // ── Session-level timeline ────────────────────────────────────────────────
-
-    private long   _sessionOffsetMs;    // ms into session where the current clip starts
-    private long   _sessionTotalMs;     // estimated total session duration in ms
-    private long[] _clipOffsetsMs = []; // precomputed start-ms for each clip in session
-    private long?  _pendingSeekMs;      // clip-relative seek to apply once media opens
+    private List<List<string>>                                    _sessions   = [];
 
     // ── Playback state ────────────────────────────────────────────────────────
 
-    private string  _activeAngle = "FRONT";
-    private bool    _isPlaying;
-    private double  _playbackRate = 1.0;
-    private bool    _sliderDragging;
-    private bool    _suppressSlider;
-    private int     _pendingOpens;
+    private string?  _currentTs;
+    private int      _currentSession = -1;
+    private string   _activeAngle    = "FRONT";
+    private bool     _isPlaying;
+    private double   _playbackRate   = 1.0;
+    private bool     _sliderDragging;
+    private bool     _suppressSlider;
+    private int      _pendingOpens;
+    private bool     _suppressTreeChange;
+
+    // ── Session-level timeline ────────────────────────────────────────────────
+
+    private long   _sessionOffsetMs;
+    private long   _sessionTotalMs;
+    private long[] _clipOffsetsMs = [];
+    private long?  _pendingSeekMs;
 
     // ── Infrastructure ────────────────────────────────────────────────────────
 
     private readonly Dictionary<string, MediaElement>  _videos;
     private readonly Dictionary<string, ToggleButton>  _angleBtns;
-    private readonly DispatcherTimer _syncTimer;
+    private readonly DispatcherTimer                   _syncTimer;
+    private readonly AppSettings                       _settings;
 
     // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -54,6 +61,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        _settings = AppSettings.Load();
 
         _videos = new Dictionary<string, MediaElement>
         {
@@ -74,20 +83,20 @@ public partial class MainWindow : Window
         _syncTimer.Tick += SyncTimer_Tick;
         _syncTimer.Start();
 
-        var exeDir = AppContext.BaseDirectory;
-        string? svr = null;
-        foreach (var candidate in new[] { exeDir,
-            Path.GetDirectoryName(exeDir) ?? exeDir,
-            Path.GetDirectoryName(Path.GetDirectoryName(exeDir) ?? exeDir) ?? exeDir })
-        {
-            svr = RecordingScanner.FindSvrFolder(candidate);
-            if (svr is not null) break;
-        }
+        StatusLabel.Text = "Open a thumb drive via File → Open Thumb Drive…";
+        LoadArchive();
+    }
 
-        if (svr is not null)
-            LoadFolder(svr);
-        else
-            PromptForDrive();
+    // ═════════════════════════════════════════════════════════════════════════
+    // Source management
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private void UseSource(
+        SortedDictionary<string, Dictionary<string, string>> recordings,
+        List<List<string>> sessions)
+    {
+        _recordings = recordings;
+        _sessions   = sessions;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -97,28 +106,51 @@ public partial class MainWindow : Window
     private void LoadFolder(string svrFolder)
     {
         StopAll();
-        _recordings    = RecordingScanner.Scan(svrFolder);
-        _allTimestamps = [.. _recordings.Keys];
-        _sessions      = SessionGrouper.Group(_allTimestamps);
+        _driveRecordings = RecordingScanner.Scan(svrFolder);
+        List<string> timestamps = [.. _driveRecordings.Keys];
+        _driveSessions   = SessionGrouper.Group(timestamps);
 
-        PopulateSessionList();
+        PopulateTree(DriveTree, _driveSessions, _driveRecordings);
+        UseSource(_driveRecordings, _driveSessions);
+        UpdateCountLabel();
 
-        int n = _sessions.Count, c = _allTimestamps.Count;
-        CountLabel.Text = $"{n} trip(s), {c} clips";
-
-        if (_allTimestamps.Count > 0)
-            SessionList.SelectedIndex = 0;
+        if (_driveSessions.Count > 0)
+            SelectFirstTrip(DriveTree);
         else
             StatusLabel.Text = $"No recordings found in: {svrFolder}";
     }
 
-    private void PopulateSessionList()
+    private void LoadArchive()
     {
-        SessionList.SelectionChanged -= SessionList_SelectionChanged;
-        SessionList.Items.Clear();
+        _archiveRecordings = [];
+        _archiveSessions   = [];
 
+        if (!string.IsNullOrEmpty(_settings.ArchiveFolder)
+            && Directory.Exists(_settings.ArchiveFolder))
+        {
+            _archiveRecordings = Archiver.ScanArchive(_settings.ArchiveFolder);
+            _archiveSessions   = SessionGrouper.Group([.. _archiveRecordings.Keys]);
+        }
+
+        PopulateTree(ArchiveTree, _archiveSessions, _archiveRecordings);
+
+        if (SourceTabs.SelectedIndex == 1)
+            UpdateCountLabel();
+    }
+
+    private void PopulateTree(
+        TreeView tree,
+        List<List<string>> sessions,
+        SortedDictionary<string, Dictionary<string, string>> recordings)
+    {
+        _suppressTreeChange = true;
+        tree.Items.Clear();
+
+        var dateStyle = (Style)FindResource("DateNodeStyle");
         string? prevDate = null;
-        foreach (var session in _sessions)
+        TreeViewItem? dateNode = null;
+
+        foreach (var session in sessions)
         {
             var dt      = SessionGrouper.ParseTimestamp(session[0]);
             var dateStr = dt.ToString("yyyy-MM-dd");
@@ -126,41 +158,99 @@ public partial class MainWindow : Window
             if (dateStr != prevDate)
             {
                 prevDate = dateStr;
-                SessionList.Items.Add(new SessionListItem
+                dateNode = new TreeViewItem
                 {
-                    Label        = $"─── {dateStr} ───",
-                    IsHeader     = true,
-                    SessionIndex = -1,
-                    FirstTs      = string.Empty,
-                });
+                    Header     = dateStr,
+                    IsExpanded = true,
+                    Style      = dateStyle,
+                };
+                tree.Items.Add(dateNode);
             }
 
-            var badges = string.Concat(RecordingScanner.Angles
-                .Where(a => session.Any(ts => _recordings.TryGetValue(ts, out var f) && f.ContainsKey(a)))
-                .Select(a => $"[{a[0]}]"));
-
-            SessionList.Items.Add(new SessionListItem
+            var item = new SessionListItem
             {
-                Label        = $"  {SessionGrouper.Label(session)}  {badges}",
+                Label        = SessionGrouper.Label(session),
                 IsHeader     = false,
-                SessionIndex = _sessions.IndexOf(session),
+                SessionIndex = sessions.IndexOf(session),
                 FirstTs      = session[0],
                 Session      = session,
+            };
+
+            dateNode!.Items.Add(new TreeViewItem
+            {
+                Header  = item.Label,
+                Tag     = item,
+                Padding = new Thickness(4, 3, 4, 3),
             });
         }
 
-        SessionList.SelectionChanged += SessionList_SelectionChanged;
+        if (tree.Items.Count == 0)
+        {
+            var hint = new TreeViewItem
+            {
+                Header    = tree == ArchiveTree && string.IsNullOrEmpty(_settings.ArchiveFolder)
+                            ? "No archive folder set.\nUse File → Set Archive Folder…"
+                            : "No recordings found.",
+                Focusable = false,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            };
+            tree.Items.Add(hint);
+        }
+
+        _suppressTreeChange = false;
+    }
+
+    private static void SelectFirstTrip(TreeView tree)
+    {
+        if (tree.Items.Count > 0
+            && tree.Items[0] is TreeViewItem dateNode
+            && dateNode.Items.Count > 0
+            && dateNode.Items[0] is TreeViewItem firstTrip)
+        {
+            firstTrip.IsSelected = true;
+        }
+    }
+
+    private void UpdateCountLabel()
+    {
+        if (SourceTabs.SelectedIndex == 0)
+        {
+            int n = _driveSessions.Count, c = _driveRecordings.Count;
+            CountLabel.Text = n > 0 ? $"{n} trip(s), {c} clips" : string.Empty;
+        }
+        else
+        {
+            if (string.IsNullOrEmpty(_settings.ArchiveFolder))
+                CountLabel.Text = "No archive folder configured";
+            else
+            {
+                int n = _archiveSessions.Count, c = _archiveRecordings.Count;
+                CountLabel.Text = $"{n} trip(s), {c} clips archived";
+            }
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
     // Session-level timeline
     // ═════════════════════════════════════════════════════════════════════════
 
-    private void InitSessionTimeline(int sessionIdx)
+    private async void InitSessionTimeline(int sessionIdx)
     {
         var session    = _sessions[sessionIdx];
-        _clipOffsetsMs = ComputeClipOffsets(session);
-        _sessionTotalMs = _clipOffsetsMs[^1] + 300_000; // last clip ~5 min
+        var recordings = _recordings; // capture before any await
+
+        _clipOffsetsMs  = ComputeClipOffsets(session);
+        _sessionTotalMs = _clipOffsetsMs[^1] + 300_000; // estimate
+
+        // Probe actual last-clip duration and refine the total
+        long lastDur = await ProbeLastClipDurationAsync(session, recordings);
+
+        if (_currentSession == sessionIdx && ReferenceEquals(_recordings, recordings))
+        {
+            _sessionTotalMs = _clipOffsetsMs[^1] + lastDur;
+            if (!_sliderDragging)
+                DurLabel.Text = FormatTime(TimeSpan.FromMilliseconds(_sessionTotalMs));
+        }
     }
 
     private static long[] ComputeClipOffsets(List<string> session)
@@ -178,6 +268,34 @@ public partial class MainWindow : Window
         return offsets;
     }
 
+    private static Task<long> ProbeLastClipDurationAsync(
+        List<string> session,
+        SortedDictionary<string, Dictionary<string, string>> recordings)
+    {
+        if (session.Count == 0) return Task.FromResult(300_000L);
+
+        if (!recordings.TryGetValue(session[^1], out var files) || files.Count == 0)
+            return Task.FromResult(300_000L);
+
+        var path = files.Values.First();
+        var tcs  = new TaskCompletionSource<long>();
+        var mp   = new System.Windows.Media.MediaPlayer();
+
+        mp.MediaOpened += (_, _) =>
+        {
+            var dur = mp.NaturalDuration;
+            tcs.TrySetResult(dur.HasTimeSpan ? (long)dur.TimeSpan.TotalMilliseconds : 300_000L);
+            mp.Close();
+        };
+        mp.MediaFailed += (_, _) =>
+        {
+            tcs.TrySetResult(300_000L);
+        };
+        mp.Open(new Uri(path, UriKind.Absolute));
+
+        return tcs.Task;
+    }
+
     private int FindClipIndex(long sessionMs)
     {
         for (int i = _clipOffsetsMs.Length - 1; i >= 0; i--)
@@ -186,8 +304,6 @@ public partial class MainWindow : Window
         return 0;
     }
 
-    // Seek to an absolute ms position within the current session.
-    // Loads a new clip if the target position falls in a different one.
     private void SeekToSessionMs(long sessionMs)
     {
         if (_currentSession < 0 || _clipOffsetsMs.Length == 0) return;
@@ -206,11 +322,7 @@ public partial class MainWindow : Window
             bool wasPlaying = _isPlaying;
             _pendingSeekMs  = clipMs;
             LoadRecording(session[clipIdx], _currentSession);
-            if (wasPlaying)
-            {
-                _isPlaying = true;
-                BtnPlay.Content = "⏸";
-            }
+            if (wasPlaying) { _isPlaying = true; BtnPlay.Content = "⏸"; }
         }
     }
 
@@ -225,7 +337,6 @@ public partial class MainWindow : Window
         _currentSession = sessionIdx;
         _pendingOpens   = 0;
 
-        // Position the session-level slider at the start of this clip
         var session = _sessions[sessionIdx];
         int clipIdx = session.IndexOf(ts);
         _sessionOffsetMs = clipIdx >= 0 && clipIdx < _clipOffsetsMs.Length
@@ -300,7 +411,6 @@ public partial class MainWindow : Window
     private void SwitchAngle(string angle)
     {
         if (angle == _activeAngle) return;
-
         var refPos = _videos[_activeAngle].Position;
 
         _activeAngle = angle;
@@ -326,7 +436,7 @@ public partial class MainWindow : Window
     {
         if (_currentTs is null || _currentSession < 0) return;
         var session = _sessions[_currentSession];
-        var idx = session.IndexOf(_currentTs);
+        var idx     = session.IndexOf(_currentTs);
         if (idx < 0 || idx + 1 >= session.Count)
         {
             StopAll();
@@ -335,7 +445,6 @@ public partial class MainWindow : Window
         }
         _pendingSeekMs = null;
         LoadRecording(session[idx + 1], _currentSession);
-        // Media_Opened will call PlayAll() once all sources are ready
         _isPlaying = true;
         BtnPlay.Content = "⏸";
     }
@@ -352,7 +461,6 @@ public partial class MainWindow : Window
         var pos          = active.Position;
         var sessionPosMs = _sessionOffsetMs + (long)pos.TotalMilliseconds;
 
-        // Update seek slider against session total
         if (!_sliderDragging && _sessionTotalMs > 0)
         {
             _suppressSlider = true;
@@ -362,7 +470,6 @@ public partial class MainWindow : Window
         TimeLabel.Text = FormatTime(TimeSpan.FromMilliseconds(sessionPosMs));
         DurLabel.Text  = FormatTime(TimeSpan.FromMilliseconds(_sessionTotalMs));
 
-        // Drift correction for non-active players
         if (_isPlaying && pos > TimeSpan.Zero)
         {
             foreach (var (angle, me) in _videos)
@@ -399,7 +506,6 @@ public partial class MainWindow : Window
 
     private void Media_Ended(object sender, RoutedEventArgs e)
     {
-        // Only the active angle drives auto-advance
         if (sender is MediaElement me && me == _videos[_activeAngle])
             AdvanceToNextClip();
     }
@@ -411,21 +517,64 @@ public partial class MainWindow : Window
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // UI event handlers
+    // UI event handlers — tree selection
     // ═════════════════════════════════════════════════════════════════════════
 
-    private void SessionList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void SourceTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (SessionList.SelectedItem is not SessionListItem item || item.IsHeader)
+        if (e.OriginalSource is not TabControl) return;
+        BtnArchive.IsEnabled = false;
+        UpdateCountLabel();
+    }
+
+    private void DriveTree_SelectedItemChanged(object sender,
+        RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (_suppressTreeChange) return;
+
+        // Deselect date-group nodes immediately
+        if (e.NewValue is TreeViewItem tvi && tvi.Tag is not SessionListItem)
+        {
+            tvi.IsSelected = false;
             return;
-        if (item.FirstTs == _currentTs && item.SessionIndex == _currentSession)
-            return;
+        }
+
+        if (e.NewValue is not TreeViewItem tv || tv.Tag is not SessionListItem item) return;
+
+        BtnArchive.IsEnabled = true;
+        if (item.FirstTs == _currentTs && item.SessionIndex == _currentSession) return;
 
         bool wasPlaying = _isPlaying;
+        UseSource(_driveRecordings, _driveSessions);
         InitSessionTimeline(item.SessionIndex);
         LoadRecording(item.FirstTs, item.SessionIndex);
         if (wasPlaying) PlayAll();
     }
+
+    private void ArchiveTree_SelectedItemChanged(object sender,
+        RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (_suppressTreeChange) return;
+
+        if (e.NewValue is TreeViewItem tvi && tvi.Tag is not SessionListItem)
+        {
+            tvi.IsSelected = false;
+            return;
+        }
+
+        if (e.NewValue is not TreeViewItem tv || tv.Tag is not SessionListItem item) return;
+        if (item.FirstTs == _currentTs && item.SessionIndex == _currentSession) return;
+
+        bool wasPlaying = _isPlaying;
+        UseSource(_archiveRecordings, _archiveSessions);
+        InitSessionTimeline(item.SessionIndex);
+        LoadRecording(item.FirstTs, item.SessionIndex);
+        if (wasPlaying) PlayAll();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // UI event handlers — transport
+    // ═════════════════════════════════════════════════════════════════════════
 
     private void Angle_Click(object sender, RoutedEventArgs e)
     {
@@ -441,8 +590,7 @@ public partial class MainWindow : Window
         if (_isPlaying) PauseAll(); else PlayAll();
     }
 
-    private void Beginning_Click(object sender, RoutedEventArgs e)
-        => SeekToSessionMs(0);
+    private void Beginning_Click(object sender, RoutedEventArgs e) => SeekToSessionMs(0);
 
     private void End_Click(object sender, RoutedEventArgs e)
     {
@@ -487,9 +635,6 @@ public partial class MainWindow : Window
         SeekToSessionMs((long)(SeekSlider.Value / 10000.0 * _sessionTotalMs));
     }
 
-    private void OpenDrive_Click(object sender, RoutedEventArgs e) => PromptForDrive();
-    private void Quit_Click(object sender, RoutedEventArgs e)       => Close();
-
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         switch (e.Key)
@@ -517,26 +662,100 @@ public partial class MainWindow : Window
     }
 
     // ═════════════════════════════════════════════════════════════════════════
+    // Archive
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private async void Archive_Click(object sender, RoutedEventArgs e)
+    {
+        if (DriveTree.SelectedItem is not TreeViewItem tvi
+            || tvi.Tag is not SessionListItem item
+            || item.Session is null)
+            return;
+
+        if (string.IsNullOrEmpty(_settings.ArchiveFolder) && !PickArchiveFolder())
+            return;
+
+        BtnArchive.IsEnabled         = false;
+        var session     = item.Session;
+        var archiveRoot = _settings.ArchiveFolder!;
+        var recordings  = _driveRecordings;
+
+        int totalFiles = Archiver.CountFiles(session, recordings);
+        ArchiveProgress.Maximum    = totalFiles;
+        ArchiveProgress.Value      = 0;
+        ArchiveProgress.Visibility = Visibility.Visible;
+        StatusLabel.Text           = $"Archiving {session.Count} clip(s) — 0 / {totalFiles} files…";
+
+        var progress = new Progress<int>(n =>
+        {
+            ArchiveProgress.Value = n;
+            StatusLabel.Text      = $"Archiving — {n} / {totalFiles} files…";
+        });
+
+        try
+        {
+            int copied = await Task.Run(() =>
+                Archiver.Archive(session, recordings, archiveRoot, progress));
+
+            StatusLabel.Text = copied > 0
+                ? $"Archived {copied} new file(s) to {archiveRoot}"
+                : "All files already present in archive.";
+
+            LoadArchive();
+        }
+        catch (Exception ex)
+        {
+            StatusLabel.Text = $"Archive error: {ex.Message}";
+        }
+        finally
+        {
+            ArchiveProgress.Visibility = Visibility.Collapsed;
+            BtnArchive.IsEnabled       = true;
+        }
+    }
+
+    private void SetArchiveFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (PickArchiveFolder()) LoadArchive();
+    }
+
+    private bool PickArchiveFolder()
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title            = "Select Archive Root Folder",
+            InitialDirectory = _settings.ArchiveFolder
+                ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        };
+        if (dlg.ShowDialog(this) != true) return false;
+        _settings.ArchiveFolder = dlg.FolderName;
+        _settings.Save();
+        return true;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
     // Drive picker
     // ═════════════════════════════════════════════════════════════════════════
+
+    private void OpenDrive_Click(object sender, RoutedEventArgs e) => PromptForDrive();
+    private void Quit_Click(object sender, RoutedEventArgs e)       => Close();
 
     private void PromptForDrive()
     {
         var dlg = new DrivePickerWindow
         {
-            Owner       = IsLoaded ? this : null,
-            InitialPath = _recordings.Count > 0
+            Owner       = this,
+            InitialPath = _driveRecordings.Count > 0
                 ? Path.GetDirectoryName(
                     Path.GetDirectoryName(
                         Path.GetDirectoryName(
-                            _recordings.Values.FirstOrDefault()?.Values.FirstOrDefault())))
+                            _driveRecordings.Values.FirstOrDefault()
+                                           ?.Values.FirstOrDefault())))
                 : null,
         };
 
         if (dlg.ShowDialog() == true && dlg.SelectedFolder is not null)
             LoadFolder(dlg.SelectedFolder);
-        else if (_recordings.Count == 0)
-            Close();
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -569,10 +788,10 @@ public partial class MainWindow : Window
         var files   = _recordings[_currentTs];
         var have    = string.Join(", ", RecordingScanner.Angles.Where(a => files.ContainsKey(a)));
         var session = _currentSession >= 0 ? _sessions[_currentSession] : null;
-        var clipInfo = session is not null
+        var clip    = session is not null
             ? $"Clip {session.IndexOf(_currentTs) + 1}/{session.Count}"
             : "";
-        StatusLabel.Text = $"{dt:yyyy-MM-dd HH:mm:ss}  |  Angles: {have}  |  {clipInfo}";
+        StatusLabel.Text = $"{dt:yyyy-MM-dd HH:mm:ss}  |  Angles: {have}  |  {clip}";
     }
 }
 

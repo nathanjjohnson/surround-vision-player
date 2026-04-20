@@ -1,3 +1,4 @@
+using Xunit;
 using SurroundVisionPlayer.Logic;
 
 namespace SurroundVisionPlayer.Tests;

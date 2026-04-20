@@ -336,16 +336,22 @@
                                   MediaFailed="Media_Failed"/>
                     <MediaElement x:Name="VideoLeft"
                                   LoadedBehavior="Manual" UnloadedBehavior="Stop"
-                                  Stretch="Uniform" Visibility="Hidden"
-                                  IsMuted="True"/>
+                                  Stretch="Uniform" Visibility="Hidden" IsMuted="True"
+                                  MediaOpened="Media_Opened"
+                                  MediaEnded="Media_Ended"
+                                  MediaFailed="Media_Failed"/>
                     <MediaElement x:Name="VideoRear"
                                   LoadedBehavior="Manual" UnloadedBehavior="Stop"
-                                  Stretch="Uniform" Visibility="Hidden"
-                                  IsMuted="True"/>
+                                  Stretch="Uniform" Visibility="Hidden" IsMuted="True"
+                                  MediaOpened="Media_Opened"
+                                  MediaEnded="Media_Ended"
+                                  MediaFailed="Media_Failed"/>
                     <MediaElement x:Name="VideoRight"
                                   LoadedBehavior="Manual" UnloadedBehavior="Stop"
-                                  Stretch="Uniform" Visibility="Hidden"
-                                  IsMuted="True"/>
+                                  Stretch="Uniform" Visibility="Hidden" IsMuted="True"
+                                  MediaOpened="Media_Opened"
+                                  MediaEnded="Media_Ended"
+                                  MediaFailed="Media_Failed"/>
                 </Grid>
 
             </DockPanel>

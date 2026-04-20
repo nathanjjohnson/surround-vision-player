@@ -1,3 +1,4 @@
+using Xunit;
 using SurroundVisionPlayer.Logic;
 
 namespace SurroundVisionPlayer.Tests;
@@ -161,8 +162,8 @@ public class SessionGrouperTests
     [Fact]
     public void Group_CustomThresholdSplitsEarlier()
     {
-        // With a 200 s threshold the 323 s first gap should split
-        var sessions = SessionGrouper.Group(All[..3], gapThreshold: 200);
+        // With a 200 s threshold the 323 s first gap should split (300 s second gap also splits)
+        var sessions = SessionGrouper.Group(All[..2], gapThreshold: 200);
         Assert.Equal(2, sessions.Count);
     }
 

@@ -1,4 +1,7 @@
 using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -16,14 +19,21 @@ public partial class MainWindow : Window
     private string?             _currentTs;
     private int                 _currentSession = -1;
 
+    // ── Session-level timeline ────────────────────────────────────────────────
+
+    private long   _sessionOffsetMs;    // ms into session where the current clip starts
+    private long   _sessionTotalMs;     // estimated total session duration in ms
+    private long[] _clipOffsetsMs = []; // precomputed start-ms for each clip in session
+    private long?  _pendingSeekMs;      // clip-relative seek to apply once media opens
+
     // ── Playback state ────────────────────────────────────────────────────────
 
     private string  _activeAngle = "FRONT";
     private bool    _isPlaying;
     private double  _playbackRate = 1.0;
     private bool    _sliderDragging;
-    private bool    _suppressSlider;   // prevent feedback loop while ticking
-    private int     _pendingOpens;     // counts MediaOpened callbacks still expected
+    private bool    _suppressSlider;
+    private int     _pendingOpens;
 
     // ── Infrastructure ────────────────────────────────────────────────────────
 
@@ -64,7 +74,6 @@ public partial class MainWindow : Window
         _syncTimer.Tick += SyncTimer_Tick;
         _syncTimer.Start();
 
-        // Try to auto-detect the SVR folder from the exe's parent directories
         var exeDir = AppContext.BaseDirectory;
         string? svr = null;
         foreach (var candidate in new[] { exeDir,
@@ -88,9 +97,9 @@ public partial class MainWindow : Window
     private void LoadFolder(string svrFolder)
     {
         StopAll();
-        _recordings     = RecordingScanner.Scan(svrFolder);
-        _allTimestamps  = [.. _recordings.Keys];
-        _sessions       = SessionGrouper.Group(_allTimestamps);
+        _recordings    = RecordingScanner.Scan(svrFolder);
+        _allTimestamps = [.. _recordings.Keys];
+        _sessions      = SessionGrouper.Group(_allTimestamps);
 
         PopulateSessionList();
 
@@ -98,13 +107,9 @@ public partial class MainWindow : Window
         CountLabel.Text = $"{n} trip(s), {c} clips";
 
         if (_allTimestamps.Count > 0)
-        {
-            SessionList.SelectedIndex = 0;   // triggers SelectionChanged → LoadRecording
-        }
+            SessionList.SelectedIndex = 0;
         else
-        {
             StatusLabel.Text = $"No recordings found in: {svrFolder}";
-        }
     }
 
     private void PopulateSessionList()
@@ -115,13 +120,12 @@ public partial class MainWindow : Window
         string? prevDate = null;
         foreach (var session in _sessions)
         {
-            var dt = SessionGrouper.ParseTimestamp(session[0]);
+            var dt      = SessionGrouper.ParseTimestamp(session[0]);
             var dateStr = dt.ToString("yyyy-MM-dd");
 
             if (dateStr != prevDate)
             {
                 prevDate = dateStr;
-                // Date header (not selectable)
                 SessionList.Items.Add(new SessionListItem
                 {
                     Label        = $"─── {dateStr} ───",
@@ -149,6 +153,68 @@ public partial class MainWindow : Window
     }
 
     // ═════════════════════════════════════════════════════════════════════════
+    // Session-level timeline
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private void InitSessionTimeline(int sessionIdx)
+    {
+        var session    = _sessions[sessionIdx];
+        _clipOffsetsMs = ComputeClipOffsets(session);
+        _sessionTotalMs = _clipOffsetsMs[^1] + 300_000; // last clip ~5 min
+    }
+
+    private static long[] ComputeClipOffsets(List<string> session)
+    {
+        var offsets = new long[session.Count];
+        long acc = 0;
+        for (int i = 0; i < session.Count; i++)
+        {
+            offsets[i] = acc;
+            if (i + 1 < session.Count)
+                acc += (long)(SessionGrouper.GapSeconds(session[i], session[i + 1]) * 1000);
+            else
+                acc += 300_000;
+        }
+        return offsets;
+    }
+
+    private int FindClipIndex(long sessionMs)
+    {
+        for (int i = _clipOffsetsMs.Length - 1; i >= 0; i--)
+            if (sessionMs >= _clipOffsetsMs[i])
+                return i;
+        return 0;
+    }
+
+    // Seek to an absolute ms position within the current session.
+    // Loads a new clip if the target position falls in a different one.
+    private void SeekToSessionMs(long sessionMs)
+    {
+        if (_currentSession < 0 || _clipOffsetsMs.Length == 0) return;
+        sessionMs = Math.Clamp(sessionMs, 0, _sessionTotalMs - 1);
+
+        int clipIdx = FindClipIndex(sessionMs);
+        var session = _sessions[_currentSession];
+        long clipMs = sessionMs - _clipOffsetsMs[clipIdx];
+
+        if (session[clipIdx] == _currentTs)
+        {
+            SeekAll(TimeSpan.FromMilliseconds(clipMs));
+        }
+        else
+        {
+            bool wasPlaying = _isPlaying;
+            _pendingSeekMs  = clipMs;
+            LoadRecording(session[clipIdx], _currentSession);
+            if (wasPlaying)
+            {
+                _isPlaying = true;
+                BtnPlay.Content = "⏸";
+            }
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
     // Recording loading
     // ═════════════════════════════════════════════════════════════════════════
 
@@ -158,6 +224,12 @@ public partial class MainWindow : Window
         _currentTs      = ts;
         _currentSession = sessionIdx;
         _pendingOpens   = 0;
+
+        // Position the session-level slider at the start of this clip
+        var session = _sessions[sessionIdx];
+        int clipIdx = session.IndexOf(ts);
+        _sessionOffsetMs = clipIdx >= 0 && clipIdx < _clipOffsetsMs.Length
+            ? _clipOffsetsMs[clipIdx] : 0;
 
         var files = _recordings[ts];
         foreach (var (angle, me) in _videos)
@@ -208,7 +280,7 @@ public partial class MainWindow : Window
 
     private void SeekAll(TimeSpan pos)
     {
-        pos = pos < TimeSpan.Zero ? TimeSpan.Zero : pos;
+        if (pos < TimeSpan.Zero) pos = TimeSpan.Zero;
         foreach (var me in _videos.Values)
             if (me.Source is not null)
                 me.Position = pos;
@@ -229,7 +301,6 @@ public partial class MainWindow : Window
     {
         if (angle == _activeAngle) return;
 
-        // Grab current position for sync before switching
         var refPos = _videos[_activeAngle].Position;
 
         _activeAngle = angle;
@@ -243,7 +314,6 @@ public partial class MainWindow : Window
         foreach (var (a, btn) in _angleBtns)
             btn.IsChecked = a == angle;
 
-        // Nudge newly active player to reference position if it drifted
         if (refPos > TimeSpan.Zero && _videos[angle].Source is not null)
             _videos[angle].Position = refPos;
     }
@@ -263,8 +333,11 @@ public partial class MainWindow : Window
             StatusLabel.Text = "End of trip.";
             return;
         }
+        _pendingSeekMs = null;
         LoadRecording(session[idx + 1], _currentSession);
-        PlayAll();
+        // Media_Opened will call PlayAll() once all sources are ready
+        _isPlaying = true;
+        BtnPlay.Content = "⏸";
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -275,19 +348,19 @@ public partial class MainWindow : Window
     {
         if (_currentTs is null) return;
 
-        var active = _videos[_activeAngle];
-        var pos    = active.Position;
-        var natDur = active.NaturalDuration;
+        var active       = _videos[_activeAngle];
+        var pos          = active.Position;
+        var sessionPosMs = _sessionOffsetMs + (long)pos.TotalMilliseconds;
 
-        // Update seek slider
-        if (!_sliderDragging && natDur.HasTimeSpan && natDur.TimeSpan > TimeSpan.Zero)
+        // Update seek slider against session total
+        if (!_sliderDragging && _sessionTotalMs > 0)
         {
             _suppressSlider = true;
-            SeekSlider.Value = pos.TotalMilliseconds / natDur.TimeSpan.TotalMilliseconds * 10000.0;
+            SeekSlider.Value = (double)sessionPosMs / _sessionTotalMs * 10000.0;
             _suppressSlider = false;
         }
-        TimeLabel.Text = FormatTime(pos);
-        DurLabel.Text  = natDur.HasTimeSpan ? FormatTime(natDur.TimeSpan) : "?:??";
+        TimeLabel.Text = FormatTime(TimeSpan.FromMilliseconds(sessionPosMs));
+        DurLabel.Text  = FormatTime(TimeSpan.FromMilliseconds(_sessionTotalMs));
 
         // Drift correction for non-active players
         if (_isPlaying && pos > TimeSpan.Zero)
@@ -295,8 +368,7 @@ public partial class MainWindow : Window
             foreach (var (angle, me) in _videos)
             {
                 if (angle == _activeAngle || me.Source is null) continue;
-                var drift = (me.Position - pos).Duration();
-                if (drift > SyncThreshold)
+                if ((me.Position - pos).Duration() > SyncThreshold)
                     me.Position = pos;
             }
         }
@@ -310,24 +382,31 @@ public partial class MainWindow : Window
     {
         _pendingOpens = Math.Max(0, _pendingOpens - 1);
 
-        // Apply rate (rate must be set after media opens)
         if (sender is MediaElement me)
             me.SpeedRatio = _playbackRate;
 
-        // Once all requested angles have opened, auto-play if we were playing
-        if (_pendingOpens == 0 && _isPlaying)
-            PlayAll();
+        if (_pendingOpens == 0)
+        {
+            if (_pendingSeekMs.HasValue)
+            {
+                SeekAll(TimeSpan.FromMilliseconds(_pendingSeekMs.Value));
+                _pendingSeekMs = null;
+            }
+            if (_isPlaying)
+                PlayAll();
+        }
     }
 
     private void Media_Ended(object sender, RoutedEventArgs e)
     {
-        // Only react to the active angle's end-of-media event
+        // Only the active angle drives auto-advance
         if (sender is MediaElement me && me == _videos[_activeAngle])
             AdvanceToNextClip();
     }
 
     private void Media_Failed(object sender, ExceptionRoutedEventArgs e)
     {
+        _pendingSeekMs = null;
         StatusLabel.Text = $"Media error: {e.ErrorException?.Message}";
     }
 
@@ -343,6 +422,7 @@ public partial class MainWindow : Window
             return;
 
         bool wasPlaying = _isPlaying;
+        InitSessionTimeline(item.SessionIndex);
         LoadRecording(item.FirstTs, item.SessionIndex);
         if (wasPlaying) PlayAll();
     }
@@ -351,12 +431,7 @@ public partial class MainWindow : Window
     {
         if (sender is ToggleButton btn && btn.Tag is string angle)
         {
-            // Prevent un-checking the active button
-            if (angle == _activeAngle)
-            {
-                btn.IsChecked = true;
-                return;
-            }
+            if (angle == _activeAngle) { btn.IsChecked = true; return; }
             SwitchAngle(angle);
         }
     }
@@ -366,50 +441,55 @@ public partial class MainWindow : Window
         if (_isPlaying) PauseAll(); else PlayAll();
     }
 
-    private void Beginning_Click(object sender, RoutedEventArgs e) => SeekAll(TimeSpan.Zero);
+    private void Beginning_Click(object sender, RoutedEventArgs e)
+        => SeekToSessionMs(0);
+
     private void End_Click(object sender, RoutedEventArgs e)
     {
         var dur = _videos[_activeAngle].NaturalDuration;
         if (dur.HasTimeSpan)
             SeekAll(dur.TimeSpan - TimeSpan.FromMilliseconds(200));
     }
+
     private void StepBack_Click(object sender, RoutedEventArgs e)
-        => SeekAll(_videos[_activeAngle].Position - StepSize);
+    {
+        long target = _sessionOffsetMs
+                    + (long)_videos[_activeAngle].Position.TotalMilliseconds
+                    - (long)StepSize.TotalMilliseconds;
+        SeekToSessionMs(target);
+    }
+
     private void StepFwd_Click(object sender, RoutedEventArgs e)
-        => SeekAll(_videos[_activeAngle].Position + StepSize);
+    {
+        long target = _sessionOffsetMs
+                    + (long)_videos[_activeAngle].Position.TotalMilliseconds
+                    + (long)StepSize.TotalMilliseconds;
+        SeekToSessionMs(target);
+    }
 
-    private void HalfSpeed_Click(object sender, RoutedEventArgs e)   => SetRate(0.5);
-    private void NormalSpeed_Click(object sender, RoutedEventArgs e)  => SetRate(1.0);
-    private void DoubleSpeed_Click(object sender, RoutedEventArgs e)  => SetRate(2.0);
+    private void HalfSpeed_Click(object sender, RoutedEventArgs e)  => SetRate(0.5);
+    private void NormalSpeed_Click(object sender, RoutedEventArgs e) => SetRate(1.0);
+    private void DoubleSpeed_Click(object sender, RoutedEventArgs e) => SetRate(2.0);
 
-    // Seek slider
     private void SeekSlider_MouseDown(object sender, MouseButtonEventArgs e)
         => _sliderDragging = true;
 
     private void SeekSlider_MouseUp(object sender, MouseButtonEventArgs e)
     {
         _sliderDragging = false;
-        var dur = _videos[_activeAngle].NaturalDuration;
-        if (!dur.HasTimeSpan) return;
-        SeekAll(TimeSpan.FromMilliseconds(
-            SeekSlider.Value / 10000.0 * dur.TimeSpan.TotalMilliseconds));
+        if (_sessionTotalMs == 0) return;
+        SeekToSessionMs((long)(SeekSlider.Value / 10000.0 * _sessionTotalMs));
     }
 
     private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        // Only seek during drag (not during programmatic tick updates)
-        if (_suppressSlider || !_sliderDragging) return;
-        var dur = _videos[_activeAngle].NaturalDuration;
-        if (!dur.HasTimeSpan) return;
-        SeekAll(TimeSpan.FromMilliseconds(
-            SeekSlider.Value / 10000.0 * dur.TimeSpan.TotalMilliseconds));
+        if (_suppressSlider || !_sliderDragging || _sessionTotalMs == 0) return;
+        SeekToSessionMs((long)(SeekSlider.Value / 10000.0 * _sessionTotalMs));
     }
 
-    // Menu
     private void OpenDrive_Click(object sender, RoutedEventArgs e) => PromptForDrive();
     private void Quit_Click(object sender, RoutedEventArgs e)       => Close();
 
-    // Keyboard shortcuts
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         switch (e.Key)
@@ -418,10 +498,10 @@ public partial class MainWindow : Window
                 if (_isPlaying) PauseAll(); else PlayAll();
                 e.Handled = true; break;
             case Key.Left:
-                SeekAll(_videos[_activeAngle].Position - StepSize);
+                StepBack_Click(sender, new RoutedEventArgs());
                 e.Handled = true; break;
             case Key.Right:
-                SeekAll(_videos[_activeAngle].Position + StepSize);
+                StepFwd_Click(sender, new RoutedEventArgs());
                 e.Handled = true; break;
             case Key.F: SwitchAngle("FRONT"); e.Handled = true; break;
             case Key.L: SwitchAngle("LEFT");  e.Handled = true; break;
@@ -456,7 +536,7 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog() == true && dlg.SelectedFolder is not null)
             LoadFolder(dlg.SelectedFolder);
         else if (_recordings.Count == 0)
-            Close();   // Nothing loaded and user cancelled — exit
+            Close();
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -466,30 +546,33 @@ public partial class MainWindow : Window
     private static string FormatTime(TimeSpan t)
     {
         if (t < TimeSpan.Zero) t = TimeSpan.Zero;
-        return $"{(int)t.TotalMinutes}:{t.Seconds:D2}";
+        return t.TotalHours >= 1
+            ? $"{(int)t.TotalHours}:{t.Minutes:D2}:{t.Seconds:D2}"
+            : $"{(int)t.TotalMinutes}:{t.Seconds:D2}";
     }
 
     private void ResetSlider()
     {
         _suppressSlider = true;
-        SeekSlider.Value = 0;
+        SeekSlider.Value = _sessionTotalMs > 0
+            ? (double)_sessionOffsetMs / _sessionTotalMs * 10000.0
+            : 0;
         _suppressSlider = false;
-        TimeLabel.Text = "0:00";
-        DurLabel.Text  = "?:??";
+        TimeLabel.Text = FormatTime(TimeSpan.FromMilliseconds(_sessionOffsetMs));
+        DurLabel.Text  = FormatTime(TimeSpan.FromMilliseconds(_sessionTotalMs));
     }
 
     private void UpdateStatus()
     {
         if (_currentTs is null) return;
-        var dt    = SessionGrouper.ParseTimestamp(_currentTs);
-        var files = _recordings[_currentTs];
-        var have  = string.Join(", ", RecordingScanner.Angles.Where(a => files.ContainsKey(a)));
+        var dt      = SessionGrouper.ParseTimestamp(_currentTs);
+        var files   = _recordings[_currentTs];
+        var have    = string.Join(", ", RecordingScanner.Angles.Where(a => files.ContainsKey(a)));
         var session = _currentSession >= 0 ? _sessions[_currentSession] : null;
         var clipInfo = session is not null
             ? $"Clip {session.IndexOf(_currentTs) + 1}/{session.Count}"
             : "";
-        StatusLabel.Text =
-            $"{dt:yyyy-MM-dd HH:mm:ss}  |  Angles: {have}  |  {clipInfo}";
+        StatusLabel.Text = $"{dt:yyyy-MM-dd HH:mm:ss}  |  Angles: {have}  |  {clipInfo}";
     }
 }
 

@@ -31,4 +31,10 @@ public static class BookmarkManager
 
     public static List<Bookmark> ForSession(List<Bookmark> all, string firstTs)
         => [.. all.Where(b => b.SessionFirstTs == firstTs).OrderBy(b => b.SessionMs)];
+
+    public static Bookmark? PrevBookmark(List<Bookmark> all, string firstTs, long currentMs, long toleranceMs = 500)
+        => ForSession(all, firstTs).LastOrDefault(b => b.SessionMs < currentMs - toleranceMs);
+
+    public static Bookmark? NextBookmark(List<Bookmark> all, string firstTs, long currentMs, long toleranceMs = 500)
+        => ForSession(all, firstTs).FirstOrDefault(b => b.SessionMs > currentMs + toleranceMs);
 }

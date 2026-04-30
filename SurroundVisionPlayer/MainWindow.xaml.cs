@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Line = System.Windows.Shapes.Line;
 using SurroundVisionPlayer.Logic;
@@ -320,6 +321,7 @@ public partial class MainWindow : Window
             _sessionTotalMs = _clipOffsetsMs[^1] + lastDur;
             if (!_sliderDragging)
                 DurLabel.Text = FormatTime(TimeSpan.FromMilliseconds(_sessionTotalMs));
+            RefreshBookmarkCanvas();
         }
     }
 
@@ -536,7 +538,11 @@ public partial class MainWindow : Window
 
         var active       = _videos[_activeAngle];
         var pos          = active.Position;
-        var sessionPosMs = _sessionOffsetMs + (long)pos.TotalMilliseconds;
+        // While a cross-clip seek is in flight, show the target time so the
+        // display doesn't flash the clip-boundary offset before the seek lands.
+        var sessionPosMs = _pendingSeekMs.HasValue && _pendingOpens > 0
+            ? _sessionOffsetMs + _pendingSeekMs.Value
+            : _sessionOffsetMs + (long)pos.TotalMilliseconds;
 
         if (!_sliderDragging && _sessionTotalMs > 0)
         {
@@ -784,6 +790,15 @@ public partial class MainWindow : Window
                 e.Handled = true; break;
             case Key.B:
                 ShowBookmarkInput();
+                e.Handled = true; break;
+            case Key.S:
+                CaptureFrame();
+                e.Handled = true; break;
+            case Key.OemOpenBrackets:
+                SeekToPrevBookmark();
+                e.Handled = true; break;
+            case Key.OemCloseBrackets:
+                SeekToNextBookmark();
                 e.Handled = true; break;
         }
     }
@@ -1429,6 +1444,60 @@ public partial class MainWindow : Window
 
     private void BookmarkCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         => RefreshBookmarkCanvas();
+
+    private void SeekToPrevBookmark()
+    {
+        if (_currentSession < 0) return;
+        long currentMs = _sessionOffsetMs + (long)_videos[_activeAngle].Position.TotalMilliseconds;
+        var bm = BookmarkManager.PrevBookmark(_bookmarks, _sessions[_currentSession][0], currentMs);
+        if (bm is not null) SeekToSessionMs(bm.SessionMs);
+    }
+
+    private void SeekToNextBookmark()
+    {
+        if (_currentSession < 0) return;
+        long currentMs = _sessionOffsetMs + (long)_videos[_activeAngle].Position.TotalMilliseconds;
+        var bm = BookmarkManager.NextBookmark(_bookmarks, _sessions[_currentSession][0], currentMs);
+        if (bm is not null) SeekToSessionMs(bm.SessionMs);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Frame capture
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private void CaptureFrame()
+    {
+        var target = _quadView ? (FrameworkElement)VideoGrid : _videos[_activeAngle];
+        int w = (int)target.ActualWidth;
+        int h = (int)target.ActualHeight;
+        if (w == 0 || h == 0) return;
+
+        var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(target);
+
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(rtb));
+
+        var savePath = BuildCapturePath();
+        Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
+        using var stream = File.Create(savePath);
+        encoder.Save(stream);
+        StatusLabel.Text = $"Frame saved: {savePath}";
+    }
+
+    private string BuildCapturePath()
+    {
+        var folder = !string.IsNullOrEmpty(_settings.ArchiveFolder)
+            ? _settings.ArchiveFolder
+            : Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+
+        var ts = _currentTs is not null
+            ? SessionGrouper.ParseTimestamp(_currentTs).ToString("yyyy-MM-dd_HH-mm-ss")
+            : DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+
+        var angle = _quadView ? "QUAD" : _activeAngle;
+        return Path.Combine(folder, $"capture_{ts}_{angle}.png");
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // Drive picker

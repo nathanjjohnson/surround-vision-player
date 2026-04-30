@@ -97,4 +97,56 @@ public class BookmarkManagerTests : IDisposable
         var all = new List<Bookmark> { new("ts_A", 1000, "x") };
         Assert.Empty(BookmarkManager.ForSession(all, "ts_Z"));
     }
+
+    // ── PrevBookmark ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PrevBookmark_ReturnsClosestBefore()
+    {
+        var all = new List<Bookmark>
+        {
+            new("ts", 1000, "a"),
+            new("ts", 3000, "b"),
+            new("ts", 7000, "c"),
+        };
+        var result = BookmarkManager.PrevBookmark(all, "ts", 6000);
+        Assert.Equal(3000, result?.SessionMs);
+    }
+
+    [Fact]
+    public void PrevBookmark_NoneBeforeCurrent_ReturnsNull()
+    {
+        var all = new List<Bookmark> { new("ts", 5000, "x") };
+        Assert.Null(BookmarkManager.PrevBookmark(all, "ts", 5100));
+    }
+
+    [Fact]
+    public void PrevBookmark_EmptyList_ReturnsNull()
+        => Assert.Null(BookmarkManager.PrevBookmark([], "ts", 10000));
+
+    // ── NextBookmark ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void NextBookmark_ReturnsClosestAfter()
+    {
+        var all = new List<Bookmark>
+        {
+            new("ts", 1000, "a"),
+            new("ts", 3000, "b"),
+            new("ts", 7000, "c"),
+        };
+        var result = BookmarkManager.NextBookmark(all, "ts", 2000);
+        Assert.Equal(3000, result?.SessionMs);
+    }
+
+    [Fact]
+    public void NextBookmark_NoneAfterCurrent_ReturnsNull()
+    {
+        var all = new List<Bookmark> { new("ts", 5000, "x") };
+        Assert.Null(BookmarkManager.NextBookmark(all, "ts", 4900));
+    }
+
+    [Fact]
+    public void NextBookmark_EmptyList_ReturnsNull()
+        => Assert.Null(BookmarkManager.NextBookmark([], "ts", 0));
 }

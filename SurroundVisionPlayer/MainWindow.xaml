@@ -1,7 +1,7 @@
 <Window x:Class="SurroundVisionPlayer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Surround Vision Player v0.3.1 — 2027 Chevy Bolt"
+        Title="Surround Vision Player v0.3.2 — 2027 Chevy Bolt"
         Width="1280" Height="820" MinWidth="900" MinHeight="580"
         Background="#1A1A2E" Foreground="#E0E0E0"
         PreviewKeyDown="Window_PreviewKeyDown"

@@ -11,6 +11,11 @@
     <Platforms>ARM64;x64</Platforms>
     <LangVersion>12</LangVersion>
     <Version>0.3.2</Version>
+    <ApplicationIcon>bolt.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="bolt.ico"/>
+  </ItemGroup>
 
 </Project>
